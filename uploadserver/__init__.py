@@ -135,11 +135,17 @@ def receive_upload(handler):
     for field in fields:
         if field.file and field.filename:
             filename = pathlib.Path(field.filename).name
+            if field.newdir:
+                newdir = pathlib.Path(args.server_directory) / pathlib.Path(field.newdir).name
+                newdir.mkdir(parents=True, exist_ok=True)
+                filename = field.new_dir + filename
         else:
             filename = None
+            
+
         
         if filename:
-            destination = pathlib.Path(args.args.file_directory_to_save) / filename
+            destination = pathlib.Path(args.server_directory) / filename
             if os.path.exists(destination):
                 if args.allow_replace and os.path.isfile(destination):
                     os.remove(destination)
@@ -404,10 +410,6 @@ def main():
         help='Specify alternate bind address [default: all interfaces]')
     parser.add_argument('--server_directory', '-d', default=os.getcwd(),
         help='Specify alternative server_directory [default:current server_directory]')
-    
-    parser.add_argument('--file_directory_to_save', '-fd', default='',
-        help='Specify any (even new) folder to save a file [default:current server_directory + /provision]')
-
     parser.add_argument('--theme', type=str, default='auto',
         choices=['light', 'auto', 'dark'],
         help='Specify a light or dark theme for the upload page '
@@ -425,7 +427,6 @@ def main():
     
     args = parser.parse_args()
     if not hasattr(args, 'server_directory'): args.server_directory = os.getcwd()
-    args.file_directory_to_save = args.server_directory+args.file_directory_to_save
 
     if args.basic_auth and args.basic_auth_upload:
         print('Cannot set both --basic--auth and --basic-auth-upload')
