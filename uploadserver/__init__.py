@@ -365,13 +365,13 @@ def serve_forever():
     assert hasattr(args, 'basic_auth')
     assert hasattr(args, 'basic_auth_upload')
     assert hasattr(args, 'server_directory') and type(args.server_directory) is str
-    assert hasattr(args, 'file_directory_to_save') and type(args.file_directory_to_save) is str
+    # assert hasattr(args, 'file_directory_to_save') and type(args.file_directory_to_save) is str
     
     if args.cgi:
         handler_class = CGIHTTPRequestHandler
     else:
         handler_class = functools.partial(SimpleHTTPRequestHandler,
-            server_directory=args.server_directory, file_directory_to_save = args.file_directory_to_save)
+            server_directory=args.server_directory)
     
     print('File upload available at /upload')
     
