@@ -74,14 +74,14 @@ document.getElementsByTagName('form')[0].addEventListener('submit', async e => {
 </script>
 </html>''', 'utf-8')
 
-def get_directory_head_injection(theme):
+def get_server_directory_head_injection(theme):
     return bytes('''<!-- Injected by uploadserver -->
 <meta name="viewport" content="width=device-width" />
 <meta name="color-scheme" content="''' + COLOR_SCHEME.get(theme) + '''">
 <!-- End injection by uploadserver -->
 ''', 'utf-8')
 
-DIRECTORY_BODY_INJECTION = b'''<!-- Injected by uploadserver -->
+server_directory_BODY_INJECTION = b'''<!-- Injected by uploadserver -->
 <a href="upload">File upload</a> (provided by uploadserver)
 <hr>
 <!-- End injection by uploadserver -->
@@ -101,9 +101,9 @@ class PersistentFieldStorage(cgi.FieldStorage):
     def make_file(self):
         if self._binary_file:
             return tempfile.NamedTemporaryFile(mode = 'wb+',
-                dir = args.directory, delete = False)
+                dir = args.server_directory, delete = False)
         else:
-            return tempfile.NamedTemporaryFile("w+", dir = args.directory,
+            return tempfile.NamedTemporaryFile("w+", dir = args.server_directory,
                 delete = False, encoding = self.encoding, newline = '\n')
 
 def auto_rename(path):
@@ -139,7 +139,7 @@ def receive_upload(handler):
             filename = None
         
         if filename:
-            destination = pathlib.Path(args.directory) / filename
+            destination = pathlib.Path(args.args.file_directory_to_save) / filename
             if os.path.exists(destination):
                 if args.allow_replace and os.path.isfile(destination):
                     os.remove(destination)
@@ -211,13 +211,13 @@ def check_http_authentication(handler):
 
 # Let's not inherit http.server.SimpleHTTPRequestHandler - that would cause
 # diamond-pattern inheritance
-class ListDirectoryInterception:
-    # Only runs when serving directory listings
+class Listserver_directoryInterception:
+    # Only runs when serving server_directory listings
     def flush_headers_interceptor(self):
         for i, header in enumerate(self._headers_buffer):
             if header[:15] == b'Content-Length:':
-                length = int(header[15:]) + len(DIRECTORY_BODY_INJECTION) + \
-                    len(get_directory_head_injection(args.theme))
+                length = int(header[15:]) + len(server_directory_BODY_INJECTION) + \
+                    len(get_server_directory_head_injection(args.theme))
                 
                 # Use same encoding that self.send_header() uses
                 self._headers_buffer[i] = f'Content-Length: {length}\r\n' \
@@ -226,22 +226,22 @@ class ListDirectoryInterception:
         # Can't use super() - avoiding diamond-pattern inheritance'
         http.server.SimpleHTTPRequestHandler.flush_headers(self)
     
-    # Only runs when serving directory listings
+    # Only runs when serving server_directory listings
     def copyfile_interceptor(self, source, outputfile):
         content = source.read()
         content = content.replace(b'</head>',
-            get_directory_head_injection(args.theme) + b'</head>')
-        content = content.replace(b'<ul>', DIRECTORY_BODY_INJECTION + b'<ul>')
+            get_server_directory_head_injection(args.theme) + b'</head>')
+        content = content.replace(b'<ul>', server_directory_BODY_INJECTION + b'<ul>')
         outputfile.write(content)
     
-    def list_directory(self, path):
+    def list_server_directory(self, path):
         setattr(self, 'flush_headers', self.flush_headers_interceptor)
         setattr(self, 'copyfile', self.copyfile_interceptor)
         
         # Can't use super() - avoiding diamond-pattern inheritance'
-        return http.server.SimpleHTTPRequestHandler.list_directory(self, path)
+        return http.server.SimpleHTTPRequestHandler.list_server_directory(self, path)
 
-class SimpleHTTPRequestHandler(ListDirectoryInterception,
+class SimpleHTTPRequestHandler(Listserver_directoryInterception,
     http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if not check_http_authentication(self): return
@@ -269,7 +269,7 @@ class SimpleHTTPRequestHandler(ListDirectoryInterception,
     def do_PUT(self):
         self.do_POST()
 
-class CGIHTTPRequestHandler(ListDirectoryInterception,
+class CGIHTTPRequestHandler(Listserver_directoryInterception,
     http.server.CGIHTTPRequestHandler):
     def do_GET(self):
         if not check_http_authentication(self): return
@@ -308,7 +308,7 @@ def intercept_first_print():
 
 def ssl_wrap(socket):
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    server_root = pathlib.Path(args.directory).resolve()
+    server_root = pathlib.Path(args.server_directory).resolve()
     
     # Server certificate handling
     server_certificate = pathlib.Path(args.server_certificate).resolve()
@@ -358,13 +358,14 @@ def serve_forever():
     assert hasattr(args, 'client_certificate')
     assert hasattr(args, 'basic_auth')
     assert hasattr(args, 'basic_auth_upload')
-    assert hasattr(args, 'directory') and type(args.directory) is str
+    assert hasattr(args, 'server_directory') and type(args.server_directory) is str
+    assert hasattr(args, 'file_directory_to_save') and type(args.file_directory_to_save) is str
     
     if args.cgi:
         handler_class = CGIHTTPRequestHandler
     else:
         handler_class = functools.partial(SimpleHTTPRequestHandler,
-            directory=args.directory)
+            server_directory=args.server_directory, file_directory_to_save = args.file_directory_to_save)
     
     print('File upload available at /upload')
     
@@ -401,8 +402,12 @@ def main():
         'rename by default.')
     parser.add_argument('--bind', '-b', metavar='ADDRESS',
         help='Specify alternate bind address [default: all interfaces]')
-    parser.add_argument('--directory', '-d', default=os.getcwd(),
-        help='Specify alternative directory [default:current directory]')
+    parser.add_argument('--server_directory', '-d', default=os.getcwd(),
+        help='Specify alternative server_directory [default:current server_directory]')
+    
+    parser.add_argument('--file_directory_to_save', '-fd', default='',
+        help='Specify any (even new) folder to save a file [default:current server_directory + /provision]')
+
     parser.add_argument('--theme', type=str, default='auto',
         choices=['light', 'auto', 'dark'],
         help='Specify a light or dark theme for the upload page '
@@ -419,8 +424,9 @@ def main():
         help='Specify user:pass for basic authentication (uploads only)')
     
     args = parser.parse_args()
-    if not hasattr(args, 'directory'): args.directory = os.getcwd()
-    
+    if not hasattr(args, 'server_directory'): args.server_directory = os.getcwd()
+    args.file_directory_to_save = args.server_directory+args.file_directory_to_save
+
     if args.basic_auth and args.basic_auth_upload:
         print('Cannot set both --basic--auth and --basic-auth-upload')
         sys.exit(6)
