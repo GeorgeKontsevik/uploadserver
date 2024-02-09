@@ -138,7 +138,7 @@ def receive_upload(handler):
             if field.newdir:
                 newdir = pathlib.Path(args.directory) / pathlib.Path(field.newdir).name
                 newdir.mkdir(parents=True, exist_ok=True)
-                filename = field.new_dir + filename
+                filename = str(newdir) + '/' + filename
         else:
             filename = None
             
